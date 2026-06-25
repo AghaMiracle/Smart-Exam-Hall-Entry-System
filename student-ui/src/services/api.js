@@ -1,0 +1,180 @@
+import axios from 'axios';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+const apiClient = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Request interceptor — inject JWT access token
+apiClient.interceptors.request.use(
+  (config) => {
+    const session = JSON.parse(localStorage.getItem('student_session'));
+    if (session && session.accessToken) {
+      config.headers.Authorization = `Bearer ${session.accessToken}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response interceptor — handle 401 + auto refresh
+apiClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    // If 401 and we haven't retried yet, try refreshing
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
+      try {
+        const session = JSON.parse(localStorage.getItem('student_session'));
+        if (session?.refreshToken) {
+          const refreshRes = await axios.post(`${API_URL}/auth/refresh-token`, {
+            refreshToken: session.refreshToken,
+          });
+
+          if (refreshRes.data?.success && refreshRes.data?.data?.accessToken) {
+            const newToken = refreshRes.data.data.accessToken;
+            session.accessToken = newToken;
+            localStorage.setItem('student_session', JSON.stringify(session));
+
+            originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            return apiClient(originalRequest);
+          }
+        }
+      } catch (refreshError) {
+        // Refresh failed — clear session and redirect to login
+        localStorage.removeItem('student_session');
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+      }
+    }
+
+    // Extract error message from API response
+    const message =
+      error.response?.data?.message ||
+      error.response?.data?.errors?.[0]?.message ||
+      error.response?.data?.errors?.[0]?.msg ||
+      error.message ||
+      'An error occurred';
+
+    return Promise.reject(new Error(message));
+  }
+);
+
+/**
+ * Helper to unwrap the standard API response: { success, message, data }
+ */
+const unwrap = (res) => res.data?.data ?? res.data;
+
+export const api = {
+  auth: {
+    login: async (username, password) => {
+      const res = await apiClient.post('/auth/student/login', { username, password });
+      const payload = res.data;
+
+      if (!payload.success) {
+        throw new Error(payload.message || 'Login failed');
+      }
+
+      // Store session
+      const session = {
+        accessToken: payload.data.accessToken,
+        refreshToken: payload.data.refreshToken,
+        student: payload.data.student,
+        institution: payload.data.institution,
+      };
+      localStorage.setItem('student_session', JSON.stringify(session));
+
+      return session;
+    },
+
+    forgotPassword: async (email) => {
+      const res = await apiClient.post('/auth/forgot-password', {
+        email,
+        userType: 'student',
+      });
+      return unwrap(res);
+    },
+
+    resetPassword: async (token, password) => {
+      const res = await apiClient.post('/auth/reset-password', {
+        token,
+        password,
+        userType: 'student',
+      });
+      return unwrap(res);
+    },
+
+    logout: async () => {
+      try {
+        await apiClient.post('/auth/student/logout');
+      } catch (e) {
+        // Logout may fail if token expired, that's fine
+      }
+      localStorage.removeItem('student_session');
+    },
+  },
+
+  dashboard: {
+    get: async () => {
+      const res = await apiClient.get('/dashboard/student');
+      return unwrap(res);
+    },
+  },
+
+  exams: {
+    active: async () => {
+      const res = await apiClient.get('/exams/student/active');
+      return unwrap(res);
+    },
+    upcoming: async () => {
+      const res = await apiClient.get('/exams/student/upcoming');
+      return unwrap(res);
+    },
+    history: async () => {
+      const res = await apiClient.get('/exams/student/history');
+      return unwrap(res);
+    },
+  },
+
+  qrCodes: {
+    getActive: async () => {
+      const res = await apiClient.get('/qrcodes/student/active');
+      return unwrap(res);
+    },
+  },
+
+  attendance: {
+    history: async (page = 1, limit = 20) => {
+      const res = await apiClient.get(`/attendance/student/history?page=${page}&limit=${limit}`);
+      return unwrap(res);
+    },
+  },
+
+  profile: {
+    get: async () => {
+      const res = await apiClient.get('/students/me/profile');
+      return unwrap(res);
+    },
+    update: async (data) => {
+      const res = await apiClient.put('/students/me/profile', data);
+      return unwrap(res);
+    },
+    uploadPassport: async (file) => {
+      const formData = new FormData();
+      formData.append('passportPhoto', file);
+      const res = await apiClient.put('/students/me/passport', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return unwrap(res);
+    },
+  },
+};
+
+export default api;
