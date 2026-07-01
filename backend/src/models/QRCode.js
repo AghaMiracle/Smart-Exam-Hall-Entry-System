@@ -5,7 +5,14 @@ const qrCodeSchema = new mongoose.Schema(
     studentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Student',
-      required: true,
+      // Optional: exam-hall QRs are shared and not tied to a single student.
+      required: false,
+      default: null,
+    },
+    type: {
+      type: String,
+      enum: ['student', 'exam'],
+      default: 'student',
     },
     examId: {
       type: mongoose.Schema.Types.ObjectId,

@@ -38,6 +38,38 @@ class QRCodeController {
   }
 
   /**
+   * GET /api/qrcodes/exam/:examId
+   */
+  async getExamQRCodes(req, res, next) {
+    try {
+      const qrCodes = await qrCodeService.getQRCodesByExam(
+        req.params.examId,
+        req.user.institutionId
+      );
+      return successResponse(res, 'QR codes retrieved.', qrCodes);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/qrcodes/exam-qr
+   */
+  async generateExamQR(req, res, next) {
+    try {
+      const { examId } = req.body;
+      const qrCode = await qrCodeService.generateExamQR(
+        examId,
+        req.user.institutionId,
+        req.user.id
+      );
+      return successResponse(res, 'Exam hall QR generated.', qrCode, null, 201);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /api/qrcodes/verify
    */
   async verifyQR(req, res, next) {
@@ -122,6 +154,30 @@ class QRCodeController {
       next(error);
     }
   }
+
+  /**
+   * POST /api/qrcodes/student/verify (Student scans QR at exam hall)
+   */
+  async studentVerifyQR(req, res, next) {
+    try {
+      const { encryptedPayload } = req.body;
+      const result = await qrCodeService.studentVerifyQR(
+        encryptedPayload,
+        req.user.id
+      );
+
+      const statusCode = result.verified ? 200 : 400;
+      const message = result.verified ? 'Student Verified' : result.reason;
+      return res.status(statusCode).json({
+        success: result.verified,
+        message,
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new QRCodeController();
+

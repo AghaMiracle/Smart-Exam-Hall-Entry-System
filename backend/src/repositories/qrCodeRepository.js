@@ -80,6 +80,17 @@ class QRCodeRepository {
     );
   }
 
+  async findActiveExamQR(examId) {
+    return QRCode.findOne({ examId, type: 'exam', status: 'active' });
+  }
+
+  async revokeExamQRs(examId) {
+    return QRCode.updateMany(
+      { examId, type: 'exam', status: 'active' },
+      { status: 'revoked' }
+    );
+  }
+
   async expireOld() {
     return QRCode.updateMany(
       { expiresAt: { $lt: new Date() }, status: 'active' },

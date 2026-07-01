@@ -53,21 +53,25 @@ const startServer = async () => {
 const gracefulShutdown = (signal) => {
   logger.info(`${signal} received. Starting graceful shutdown...`);
 
-  server.close(() => {
+  // Mongoose 8 dropped the callback signature for connection.close(); use the Promise form.
+  server.close(async () => {
     logger.info('HTTP server closed');
-
-    const mongoose = require('mongoose');
-    mongoose.connection.close(false, () => {
+    try {
+      const mongoose = require('mongoose');
+      await mongoose.connection.close(false);
       logger.info('MongoDB connection closed');
       process.exit(0);
-    });
+    } catch (err) {
+      logger.error('Error closing MongoDB connection:', err);
+      process.exit(1);
+    }
   });
 
-  // Force close after 10 seconds
+  // Force close after 10 seconds. unref() so this timer never blocks a clean exit.
   setTimeout(() => {
     logger.error('Forced shutdown after timeout');
     process.exit(1);
-  }, 10000);
+  }, 10000).unref();
 };
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

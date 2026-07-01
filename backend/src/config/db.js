@@ -6,8 +6,15 @@ const connectDB = async () => {
   try {
     const conn = await mongoose.connect(env.MONGODB_URI, {
       maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
+      // 5s is too short for Atlas: with a 10s heartbeat interval, the driver
+      // can time out before it finishes discovering the replica-set primary
+      // (especially across regions / during a brief failover). 30s is the
+      // Mongoose default and gives the topology time to settle.
+      serverSelectionTimeoutMS: 30000,
       socketTimeoutMS: 45000,
+      // Keep idle sockets alive so we don't repeatedly re-handshake.
+      heartbeatFrequencyMS: 10000,
+      retryWrites: true,
     });
 
     logger.info(`MongoDB connected: ${conn.connection.host}/${conn.connection.name}`);
@@ -26,8 +33,10 @@ const connectDB = async () => {
 
     return conn;
   } catch (error) {
-    logger.error('MongoDB connection failed:', error.message);
-    process.exit(1);
+    // Log the full error so the caller (startServer) gets the real cause,
+    // not just an empty `.message` string.
+    logger.error('MongoDB connection failed:', error);
+    throw error;
   }
 };
 

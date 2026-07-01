@@ -13,7 +13,10 @@ const parseCSV = (buffer) => {
       columns: true,
       skip_empty_lines: true,
       trim: true,
-      cast: true,
+      // NOTE: do NOT enable `cast` — it coerces "07012345678" to a Number
+      // (losing the leading zero) and turns "true"/"false" strings into
+      // booleans, corrupting student records on import.
+      cast: false,
     });
 
     parser.on('readable', () => {
