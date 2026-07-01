@@ -7,6 +7,7 @@ import {
   User, 
   BookOpen, 
   QrCode, 
+  ScanLine,
   CalendarCheck, 
   ArrowRight,
   ShieldCheck,
@@ -118,12 +119,12 @@ export const Dashboard = () => {
                   to="/my-qr"
                   className="w-full sm:w-auto flat-btn bg-black text-white hover:scale-102 text-xs font-black py-3 px-6 flex items-center justify-center gap-2 uppercase tracking-wider"
                 >
-                  <QrCode className="w-5 h-5 stroke-[2.5]" />
-                  View Hall Pass QR
+                  <ScanLine className="w-5 h-5 stroke-[2.5]" />
+                  Scan Entry QR Code
                   <ArrowRight className="w-4 h-4" />
                 </Link>
                 <span className="text-[10px] font-bold text-amber-950 uppercase leading-snug">
-                  Show the QR code to the invigilator's scanner at the entrance for verification.
+                  Scan the QR code displayed at the exam hall entrance for verification.
                 </span>
               </div>
             </div>

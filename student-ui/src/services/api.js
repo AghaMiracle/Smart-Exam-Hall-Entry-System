@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-// const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-const API_URL = 'https://smart-exam-hall-entry-system.onrender.com/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// const API_URL = 'https://smart-exam-hall-entry-system.onrender.com/api';
 
 
 const apiClient = axios.create({
@@ -148,6 +148,10 @@ export const api = {
   qrCodes: {
     getActive: async () => {
       const res = await apiClient.get('/qrcodes/student/active');
+      return unwrap(res);
+    },
+    verify: async (encryptedPayload) => {
+      const res = await apiClient.post('/qrcodes/student/verify', { encryptedPayload });
       return unwrap(res);
     },
   },
