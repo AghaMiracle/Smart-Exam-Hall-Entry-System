@@ -85,8 +85,7 @@ class ExamController {
     try {
       const exams = await examService.getActiveExamsForStudent(
         req.user.institutionId,
-        req.user.department,
-        req.user.level
+        req.user.id
       );
       return successResponse(res, 'Active exams retrieved.', exams);
     } catch (error) {
@@ -98,8 +97,7 @@ class ExamController {
     try {
       const exams = await examService.getUpcomingExamsForStudent(
         req.user.institutionId,
-        req.user.department,
-        req.user.level
+        req.user.id
       );
       return successResponse(res, 'Upcoming exams retrieved.', exams);
     } catch (error) {
@@ -111,10 +109,57 @@ class ExamController {
     try {
       const exams = await examService.getExamHistory(
         req.user.institutionId,
+        req.user.id
+      );
+      return successResponse(res, 'Exam history retrieved.', exams);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getAvailableExams(req, res, next) {
+    try {
+      const exams = await examService.getAvailableExamsForStudent(
+        req.user.institutionId,
+        req.user.id,
         req.user.department,
         req.user.level
       );
-      return successResponse(res, 'Exam history retrieved.', exams);
+      return successResponse(res, 'Available exams retrieved.', exams);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async registerForExam(req, res, next) {
+    try {
+      const result = await examService.registerStudentForExam(
+        req.user.id,
+        req.params.id,
+        req.user.institutionId,
+        req.user.department,
+        req.user.level
+      );
+      const message = result.alreadyRegistered
+        ? 'You are already registered for this exam.'
+        : 'Registration successful.';
+      return successResponse(res, message, { registered: true, exam: result.exam });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async unregisterFromExam(req, res, next) {
+    try {
+      const result = await examService.unregisterStudentFromExam(
+        req.user.id,
+        req.params.id,
+        req.user.institutionId
+      );
+      const message = result.wasRegistered
+        ? 'You have been unregistered from this exam.'
+        : 'You were not registered for this exam.';
+      return successResponse(res, message, { registered: false, exam: result.exam });
     } catch (error) {
       next(error);
     }

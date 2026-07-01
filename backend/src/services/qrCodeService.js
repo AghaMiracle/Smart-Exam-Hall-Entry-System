@@ -495,16 +495,13 @@ class QRCodeService {
       };
     }
 
-    // Step 8b: For exam-hall QRs, confirm the student is registered for this
-    // exam (department + level match) before recording attendance.
+    // Step 8b: For exam-hall QRs, confirm the student has registered for this
+    // exam. Per-student QRs are already scoped to a specific studentId so this
+    // check only applies to the shared exam-hall QR flow.
     if (isExamQR) {
-      const norm = (v) => (v || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
-      const digits = (v) => (v || '').toString().replace(/\D/g, '');
-      const deptMatch = norm(student.department) === norm(exam.department);
-      const levelMatch =
-        norm(student.level) === norm(exam.level) ||
-        (!!digits(exam.level) && digits(student.level) === digits(exam.level));
-      if (!deptMatch || !levelMatch) {
+      const registered = Array.isArray(exam.registeredStudents)
+        && exam.registeredStudents.some((id) => id.toString() === student._id.toString());
+      if (!registered) {
         return {
           verified: false,
           reason: 'You are not registered for this exam.',

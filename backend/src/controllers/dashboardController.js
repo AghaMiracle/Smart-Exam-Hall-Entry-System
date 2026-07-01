@@ -27,9 +27,7 @@ class DashboardController {
     try {
       const data = await dashboardService.getStudentDashboard(
         req.user.id,
-        req.user.institutionId,
-        req.user.department,
-        req.user.level
+        req.user.institutionId
       );
       return successResponse(res, 'Student dashboard retrieved.', data);
     } catch (error) {

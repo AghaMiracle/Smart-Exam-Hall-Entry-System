@@ -135,22 +135,96 @@ class ExamService {
   }
 
   // Student-facing methods
-  async getActiveExamsForStudent(institutionId, department, level) {
-    return examRepository.findActiveForStudent(institutionId, department, level);
+  async getActiveExamsForStudent(institutionId, studentId) {
+    return examRepository.findActiveForStudent(institutionId, studentId);
   }
 
-  async getUpcomingExamsForStudent(institutionId, department, level) {
-    return examRepository.findUpcomingForStudent(institutionId, department, level);
+  async getUpcomingExamsForStudent(institutionId, studentId) {
+    return examRepository.findUpcomingForStudent(institutionId, studentId);
   }
 
-  async getExamHistory(institutionId, department, level) {
-    const query = {
+  async getExamHistory(institutionId, studentId) {
+    return examRepository.findHistoryForStudent(institutionId, studentId);
+  }
+
+  async getAvailableExamsForStudent(institutionId, studentId, department, level) {
+    return examRepository.findAvailableForStudent(institutionId, studentId, department, level);
+  }
+
+  async getMyRegisteredExams(institutionId, studentId) {
+    return examRepository.findRegisteredForStudent(institutionId, studentId);
+  }
+
+  async registerStudentForExam(studentId, examId, institutionId, department, level) {
+    const exam = await examRepository.findById(examId);
+    if (!exam) throw new AppError('Exam not found.', 404);
+    if (exam.institutionId.toString() !== institutionId.toString()) {
+      throw new AppError('This exam does not belong to your institution.', 403);
+    }
+    if (!['upcoming', 'active'].includes(exam.status)) {
+      throw new AppError('Registration is closed for this exam.', 400);
+    }
+
+    // Auto-approval, but still restrict to the exam's target department + level
+    // so students can't register for exams outside their programme.
+    const norm = (v) => (v || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+    const digits = (v) => (v || '').toString().replace(/\D/g, '');
+    const deptMatch = norm(department) === norm(exam.department);
+    const levelMatch =
+      norm(level) === norm(exam.level) ||
+      (!!digits(exam.level) && digits(level) === digits(exam.level));
+    if (!deptMatch || !levelMatch) {
+      throw new AppError('This exam is not offered to your department/level.', 403);
+    }
+
+    const alreadyRegistered = await examRepository.isStudentRegistered(examId, studentId);
+    if (alreadyRegistered) {
+      return { exam, alreadyRegistered: true };
+    }
+
+    const updated = await examRepository.registerStudent(examId, studentId);
+
+    await auditLogService.log({
+      userId: studentId,
+      userType: 'student',
+      action: 'EXAM_REGISTERED',
+      resource: 'Exam',
+      resourceId: examId,
       institutionId,
-      department,
-      level,
-      status: { $in: ['completed', 'archived'] },
-    };
-    return examRepository.findMany(query, { sort: '-examDate' });
+      details: { courseCode: exam.courseCode, title: exam.title },
+    });
+
+    return { exam: updated, alreadyRegistered: false };
+  }
+
+  async unregisterStudentFromExam(studentId, examId, institutionId) {
+    const exam = await examRepository.findById(examId);
+    if (!exam) throw new AppError('Exam not found.', 404);
+    if (exam.institutionId.toString() !== institutionId.toString()) {
+      throw new AppError('This exam does not belong to your institution.', 403);
+    }
+    if (!['upcoming'].includes(exam.status)) {
+      throw new AppError('You can only unregister from upcoming exams.', 400);
+    }
+
+    const registered = await examRepository.isStudentRegistered(examId, studentId);
+    if (!registered) {
+      return { exam, wasRegistered: false };
+    }
+
+    const updated = await examRepository.unregisterStudent(examId, studentId);
+
+    await auditLogService.log({
+      userId: studentId,
+      userType: 'student',
+      action: 'EXAM_UNREGISTERED',
+      resource: 'Exam',
+      resourceId: examId,
+      institutionId,
+      details: { courseCode: exam.courseCode, title: exam.title },
+    });
+
+    return { exam: updated, wasRegistered: true };
   }
 }
 

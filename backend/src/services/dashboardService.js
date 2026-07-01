@@ -103,11 +103,11 @@ class DashboardService {
   /**
    * Get student dashboard data
    */
-  async getStudentDashboard(studentId, institutionId, department, level) {
-    // Get active and upcoming exams
+  async getStudentDashboard(studentId, institutionId) {
+    // Get active and upcoming exams the student has registered for
     const [activeExams, upcomingExams] = await Promise.all([
-      examRepository.findActiveForStudent(institutionId, department, level),
-      examRepository.findUpcomingForStudent(institutionId, department, level),
+      examRepository.findActiveForStudent(institutionId, studentId),
+      examRepository.findUpcomingForStudent(institutionId, studentId),
     ]);
 
     // Get attendance history

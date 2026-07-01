@@ -48,23 +48,71 @@ class ExamRepository {
     return query;
   }
 
-  async findActiveForStudent(institutionId, department, level) {
+  async findActiveForStudent(institutionId, studentId) {
     return Exam.find({
       institutionId,
-      department,
-      level,
+      registeredStudents: studentId,
       status: 'active',
     }).sort('examDate');
   }
 
-  async findUpcomingForStudent(institutionId, department, level) {
+  async findUpcomingForStudent(institutionId, studentId) {
+    return Exam.find({
+      institutionId,
+      registeredStudents: studentId,
+      status: 'upcoming',
+      examDate: { $gte: new Date() },
+    }).sort('examDate');
+  }
+
+  async findHistoryForStudent(institutionId, studentId) {
+    return Exam.find({
+      institutionId,
+      registeredStudents: studentId,
+      status: { $in: ['completed', 'archived'] },
+    }).sort('-examDate');
+  }
+
+  async findAvailableForStudent(institutionId, studentId, department, level) {
+    // Exams the student is *eligible* to register for: same institution,
+    // department + level match, still open (upcoming or active), not past,
+    // and the student hasn't already registered.
     return Exam.find({
       institutionId,
       department,
       level,
-      status: 'upcoming',
-      examDate: { $gte: new Date() },
+      status: { $in: ['upcoming', 'active'] },
+      examDate: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+      registeredStudents: { $ne: studentId },
     }).sort('examDate');
+  }
+
+  async findRegisteredForStudent(institutionId, studentId) {
+    return Exam.find({
+      institutionId,
+      registeredStudents: studentId,
+    }).sort('-examDate');
+  }
+
+  async isStudentRegistered(examId, studentId) {
+    const exists = await Exam.exists({ _id: examId, registeredStudents: studentId });
+    return !!exists;
+  }
+
+  async registerStudent(examId, studentId) {
+    return Exam.findByIdAndUpdate(
+      examId,
+      { $addToSet: { registeredStudents: studentId } },
+      { new: true }
+    );
+  }
+
+  async unregisterStudent(examId, studentId) {
+    return Exam.findByIdAndUpdate(
+      examId,
+      { $pull: { registeredStudents: studentId } },
+      { new: true }
+    );
   }
 
   async update(id, data) {

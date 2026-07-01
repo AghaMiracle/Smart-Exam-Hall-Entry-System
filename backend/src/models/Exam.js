@@ -74,6 +74,12 @@ const examSchema = new mongoose.Schema(
         ref: 'User',
       },
     ],
+    registeredStudents: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Student',
+      },
+    ],
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -92,5 +98,6 @@ examSchema.index({ institutionId: 1, status: 1 });
 examSchema.index({ institutionId: 1, examDate: 1 });
 examSchema.index({ institutionId: 1, department: 1, level: 1 });
 examSchema.index({ courseCode: 1, institutionId: 1 });
+examSchema.index({ registeredStudents: 1 });
 
 module.exports = mongoose.model('Exam', examSchema);

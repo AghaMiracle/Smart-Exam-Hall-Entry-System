@@ -11,6 +11,9 @@ const { createExamValidation, updateExamValidation } = require('../validations/e
 router.get('/student/active', authenticateStudent, examController.getActiveExams);
 router.get('/student/upcoming', authenticateStudent, examController.getUpcomingExams);
 router.get('/student/history', authenticateStudent, examController.getExamHistory);
+router.get('/student/available', authenticateStudent, examController.getAvailableExams);
+router.post('/student/:id/register', authenticateStudent, examController.registerForExam);
+router.delete('/student/:id/register', authenticateStudent, examController.unregisterFromExam);
 
 // ==========================================
 // Institution routes (Admin/Officer JWT)
