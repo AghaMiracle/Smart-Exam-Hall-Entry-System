@@ -12,6 +12,7 @@ import ResetPassword from './pages/auth/ResetPassword';
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 const MyQRCode = React.lazy(() => import('./pages/MyQRCode'));
 const ExamHistory = React.lazy(() => import('./pages/ExamHistory'));
+const AvailableExams = React.lazy(() => import('./pages/AvailableExams'));
 const Profile = React.lazy(() => import('./pages/Profile'));
 
 const PageLoader = () => (
@@ -38,6 +39,7 @@ export const AppRoutes = () => {
           <Route element={<StudentLayout />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/my-qr" element={<MyQRCode />} />
+            <Route path="/available-exams" element={<AvailableExams />} />
             <Route path="/exam-history" element={<ExamHistory />} />
             <Route path="/profile" element={<Profile />} />
           </Route>

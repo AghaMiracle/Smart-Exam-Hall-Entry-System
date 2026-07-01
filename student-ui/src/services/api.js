@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
- const API_URL = 'https://smart-exam-hall-entry-system.onrender.com/api';
+const API_URL = 'https://smart-exam-hall-entry-system.onrender.com/api';
 
 
 const apiClient = axios.create({
@@ -141,6 +141,18 @@ export const api = {
     },
     history: async () => {
       const res = await apiClient.get('/exams/student/history');
+      return unwrap(res);
+    },
+    available: async () => {
+      const res = await apiClient.get('/exams/student/available');
+      return unwrap(res);
+    },
+    register: async (examId) => {
+      const res = await apiClient.post(`/exams/student/${examId}/register`);
+      return unwrap(res);
+    },
+    unregister: async (examId) => {
+      const res = await apiClient.delete(`/exams/student/${examId}/register`);
       return unwrap(res);
     },
   },

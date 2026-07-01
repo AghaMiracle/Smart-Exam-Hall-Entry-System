@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { ScanLine, QrCode, LayoutDashboard, History, User, LogOut } from 'lucide-react';
+import { ScanLine, QrCode, LayoutDashboard, History, User, LogOut, BookOpen } from 'lucide-react';
 
 export const StudentLayout = () => {
   const { user, logout } = useAuth();
@@ -15,6 +15,7 @@ export const StudentLayout = () => {
   const navItems = [
     { name: 'Dashboard', path: '/', icon: <LayoutDashboard className="w-4 h-4" /> },
     { name: 'Scan QR', path: '/my-qr', icon: <ScanLine className="w-4 h-4" /> },
+    { name: 'Available Exams', path: '/available-exams', icon: <BookOpen className="w-4 h-4" /> },
     { name: 'Exam History', path: '/exam-history', icon: <History className="w-4 h-4" /> },
     { name: 'Profile', path: '/profile', icon: <User className="w-4 h-4" /> }
   ];
