@@ -20,11 +20,13 @@ import {
 
 const examSchema = zod.object({
   courseCode: zod.string().min(4, 'Course Code is required (e.g. CSC 401)'),
-  courseTitle: zod.string().min(5, 'Course Title is required'),
+  title: zod.string().min(5, 'Course Title is required'),
   examDate: zod.string().min(10, 'Exam Date is required'),
-  examTime: zod.string().min(5, 'Exam Time is required (e.g. 09:00 AM)'),
+  startTime: zod.string().min(4, 'Start Time is required (e.g. 09:00 AM)'),
+  endTime: zod.string().min(4, 'End Time is required (e.g. 11:00 AM)'),
   venue: zod.string().min(4, 'Venue is required'),
   department: zod.string().min(2, 'Department is required'),
+  faculty: zod.string().min(2, 'Faculty is required'),
   level: zod.string().min(2, 'Level is required')
 });
 
@@ -48,7 +50,9 @@ export const Exams = () => {
   } = useForm({
     resolver: zodResolver(examSchema),
     defaultValues: {
-      level: '400 Level'
+      level: '400 Level',
+      faculty: 'Science',
+      department: 'Computer Science'
     }
   });
 
@@ -56,7 +60,8 @@ export const Exams = () => {
     setLoading(true);
     try {
       const data = await api.exams.list();
-      setExams(data);
+      // Backend may return { exams, pagination } or a flat array
+      setExams(Array.isArray(data) ? data : (data.exams || []));
     } catch (err) {
       showToast(err.message || 'Failed to fetch exams', 'error');
     } finally {
@@ -71,7 +76,8 @@ export const Exams = () => {
   const handleCreateSubmit = async (data) => {
     try {
       if (isEditing && selectedExam) {
-        await api.exams.update(selectedExam.id, data);
+        const examId = selectedExam._id || selectedExam.id;
+        await api.exams.update(examId, data);
         showToast('Exam schedule updated successfully', 'success');
       } else {
         await api.exams.create(data);
@@ -89,18 +95,21 @@ export const Exams = () => {
     setIsEditing(true);
     setIsOpen(true);
     setValue('courseCode', exam.courseCode);
-    setValue('courseTitle', exam.courseTitle);
-    setValue('examDate', exam.examDate);
-    setValue('examTime', exam.examTime);
+    setValue('title', exam.title);
+    // examDate from backend is ISO date — extract YYYY-MM-DD
+    setValue('examDate', exam.examDate ? new Date(exam.examDate).toISOString().split('T')[0] : '');
+    setValue('startTime', exam.startTime);
+    setValue('endTime', exam.endTime);
     setValue('venue', exam.venue);
     setValue('department', exam.department);
+    setValue('faculty', exam.faculty || '');
     setValue('level', exam.level);
   };
 
   const handleArchive = async (id) => {
     if (window.confirm('Are you sure you want to archive this exam? Students will no longer see it as active.')) {
       try {
-        await api.exams.archive(id);
+        await api.exams.updateStatus(id, 'archived');
         showToast('Exam archived successfully', 'success');
         fetchExams();
       } catch (err) {
@@ -109,10 +118,10 @@ export const Exams = () => {
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (examId) => {
     if (window.confirm('Are you sure you want to permanently delete this exam? This will erase related records.')) {
       try {
-        await api.exams.delete(id);
+        await api.exams.delete(examId);
         showToast('Exam deleted successfully', 'success');
         fetchExams();
       } catch (err) {
@@ -182,20 +191,20 @@ export const Exams = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredExams.map((exam) => (
-            <div key={exam.id} className="flat-card bg-white flex flex-col justify-between pt-6">
+            <div key={exam._id || exam.id} className="flat-card bg-white flex flex-col justify-between pt-6">
               {/* Header Badge */}
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <span className="flat-badge bg-black text-white text-xs py-1 px-3 mb-2 font-black uppercase tracking-wide">
                     {exam.courseCode}
                   </span>
-                  <h3 className="text-lg font-black uppercase text-black leading-tight mt-1 truncate max-w-[200px]" title={exam.courseTitle}>
-                    {exam.courseTitle}
+                  <h3 className="text-lg font-black uppercase text-black leading-tight mt-1 truncate max-w-[200px]" title={exam.title}>
+                    {exam.title}
                   </h3>
                 </div>
                 <span
                   className={`flat-badge border-2 text-[10px] font-black py-0.5 px-2 ${
-                    exam.status === 'Active' ? 'bg-flatEmerald text-white' : 'bg-gray-400 text-black'
+                    exam.status === 'active' ? 'bg-flatEmerald text-white' : 'bg-gray-400 text-black'
                   }`}
                 >
                   {exam.status}
@@ -207,12 +216,12 @@ export const Exams = () => {
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-flatBlue shrink-0" />
                   <span className="uppercase font-black text-black">Date:</span>
-                  <span>{exam.examDate}</span>
+                  <span>{exam.examDate ? new Date(exam.examDate).toLocaleDateString() : 'TBD'}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4 text-flatBlue shrink-0" />
                   <span className="uppercase font-black text-black">Time:</span>
-                  <span>{exam.examTime}</span>
+                  <span>{exam.startTime} - {exam.endTime}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-flatBlue shrink-0" />
@@ -234,9 +243,9 @@ export const Exams = () => {
                   <Edit2 className="w-3.5 h-3.5" />
                   Edit
                 </button>
-                {exam.status === 'Active' && (
+                {(exam.status === 'active' || exam.status === 'upcoming') && (
                   <button
-                    onClick={() => handleArchive(exam.id)}
+                    onClick={() => handleArchive(exam._id || exam.id)}
                     className="flex-1 flat-border-sm p-2 bg-white hover:bg-flatAmber text-black font-extrabold text-[10px] uppercase flex items-center justify-center gap-1 transition-all cursor-pointer"
                   >
                     <Archive className="w-3.5 h-3.5" />
@@ -244,7 +253,7 @@ export const Exams = () => {
                   </button>
                 )}
                 <button
-                  onClick={() => handleDelete(exam.id)}
+                  onClick={() => handleDelete(exam._id || exam.id)}
                   className="flat-border-sm p-2 bg-white hover:bg-red-500 hover:text-white text-black font-extrabold transition-all cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -281,8 +290,8 @@ export const Exams = () => {
               {/* Course Title */}
               <div>
                 <label className="block text-xs font-black uppercase tracking-wider mb-1.5 text-black">Course Title</label>
-                <input type="text" className="flat-input text-sm py-2" placeholder="e.g. Artificial Intelligence" {...register('courseTitle')} />
-                {errors.courseTitle && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase">{errors.courseTitle.message}</p>}
+                <input type="text" className="flat-input text-sm py-2" placeholder="e.g. Artificial Intelligence" {...register('title')} />
+                {errors.title && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase">{errors.title.message}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -293,12 +302,19 @@ export const Exams = () => {
                   {errors.examDate && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase">{errors.examDate.message}</p>}
                 </div>
 
-                {/* Time */}
+                {/* Start Time */}
                 <div>
-                  <label className="block text-xs font-black uppercase tracking-wider mb-1.5 text-black">Exam Time</label>
-                  <input type="text" className="flat-input text-sm py-2" placeholder="e.g. 09:00 AM" {...register('examTime')} />
-                  {errors.examTime && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase">{errors.examTime.message}</p>}
+                  <label className="block text-xs font-black uppercase tracking-wider mb-1.5 text-black">Start Time</label>
+                  <input type="text" className="flat-input text-sm py-2" placeholder="e.g. 09:00 AM" {...register('startTime')} />
+                  {errors.startTime && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase">{errors.startTime.message}</p>}
                 </div>
+              </div>
+
+              {/* End Time */}
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider mb-1.5 text-black">End Time</label>
+                <input type="text" className="flat-input text-sm py-2" placeholder="e.g. 11:00 AM" {...register('endTime')} />
+                {errors.endTime && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase">{errors.endTime.message}</p>}
               </div>
 
               {/* Venue */}
@@ -318,6 +334,18 @@ export const Exams = () => {
                   <option value="Physics">Physics</option>
                 </select>
                 {errors.department && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase">{errors.department.message}</p>}
+              </div>
+
+              {/* Faculty */}
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider mb-1.5 text-black">Faculty</label>
+                <select className="flat-select text-sm py-2" {...register('faculty')}>
+                  <option value="Science">Science</option>
+                  <option value="Engineering">Engineering</option>
+                  <option value="Arts">Arts</option>
+                  <option value="Social Sciences">Social Sciences</option>
+                </select>
+                {errors.faculty && <p className="text-[10px] text-red-500 font-bold mt-1 uppercase">{errors.faculty.message}</p>}
               </div>
 
               {/* Level */}

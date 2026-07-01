@@ -3,7 +3,6 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { useToast } from '../context/ToastContext';
 import QRCode from 'react-qr-code';
-import { encodeQR } from '../services/mockDataService';
 import { 
   QrCode, 
   Download, 
@@ -29,20 +28,23 @@ export const QRManagement = () => {
   const [selectedExamId, setSelectedExamId] = useState('');
   const [generatedQR, setGeneratedQR] = useState('');
   const [qrPayload, setQrPayload] = useState(null);
+  const [generating, setGenerating] = useState(false);
 
-  // Bulk Generator Selection
+  // Exam Hall (shared) QR Generator
   const [bulkExamId, setBulkExamId] = useState('');
-  const [bulkList, setBulkList] = useState([]);
+  const [examQR, setExamQR] = useState('');
+  const [examQRInfo, setExamQRInfo] = useState(null);
+  const [bulkGenerating, setBulkGenerating] = useState(false);
 
   const qrRef = useRef(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const studentList = await api.students.list(user.id);
-        const examList = await api.exams.list();
-        setStudents(studentList.filter(s => s.status === 'Active'));
-        setExams(examList.filter(e => e.status === 'Active'));
+        const studentList = await api.students.list({ limit: 1000 });
+        const examList = await api.exams.list({ limit: 1000 });
+        setStudents((studentList || []).filter(s => s.status === 'active'));
+        setExams((examList || []).filter(e => ['upcoming', 'active'].includes(e.status)));
       } catch (err) {
         showToast('Failed to fetch generator references', 'error');
       } finally {
@@ -52,8 +54,8 @@ export const QRManagement = () => {
     fetchData();
   }, [user]);
 
-  // Single QR Generation
-  const handleGenerateQR = () => {
+  // Single QR Generation (calls backend — persists + AES-encrypts the payload)
+  const handleGenerateQR = async () => {
     if (!selectedStudentId || !selectedExamId) {
       showToast('Please select both a student and an exam.', 'warning');
       return;
@@ -67,58 +69,47 @@ export const QRManagement = () => {
       return;
     }
 
-    const payload = {
-      studentId: student.id,
-      matricNumber: student.matricNumber,
-      examId: exam.id,
-      institutionId: user.id,
-      timestamp: new Date().toISOString()
-    };
+    setGenerating(true);
+    try {
+      const qrCode = await api.qrCodes.generate({
+        studentId: selectedStudentId,
+        examId: selectedExamId,
+      });
 
-    const encryptedString = encodeQR(payload);
-    setGeneratedQR(encryptedString);
-    setQrPayload({ student, exam, timestamp: payload.timestamp });
-    showToast('Secure Exam QR Token successfully generated!', 'success');
+      // Encode the backend's REAL encrypted payload so the student scanner
+      // can decrypt it and find the matching record in the database.
+      setGeneratedQR(qrCode.encryptedPayload);
+      setQrPayload({ student, exam, timestamp: qrCode.createdAt || new Date().toISOString() });
+      showToast('Secure Exam QR Token successfully generated!', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to generate QR code.', 'error');
+    } finally {
+      setGenerating(false);
+    }
   };
 
-  // Bulk Generation
-  const handleBulkGenerate = () => {
+  // Exam Hall QR: ONE shared code per exam. Any registered student scans it and
+  // the backend identifies them from their login session to record attendance.
+  const handleBulkGenerate = async () => {
     if (!bulkExamId) {
       showToast('Please select an exam course code.', 'warning');
       return;
     }
 
     const exam = exams.find(e => e.id === bulkExamId);
-    if (!exam) return;
-
-    // Filter students whose department matches the exam department
-    // In a production system, you would check student courses enrollment. Here we match by department.
-    const eligibleStudents = students.filter(
-      s => s.department.toLowerCase() === exam.department.toLowerCase() && s.level === exam.level
-    );
-
-    if (eligibleStudents.length === 0) {
-      showToast(`No active students found in ${exam.department} at ${exam.level}`, 'warning');
-      setBulkList([]);
-      return;
+    setBulkGenerating(true);
+    try {
+      const qrCode = await api.qrCodes.generateExamQR(bulkExamId);
+      setExamQR(qrCode.encryptedPayload);
+      setExamQRInfo({ exam, qrBase64: qrCode.qrBase64 });
+      showToast('Exam hall QR ready — display it at the entrance for students to scan.', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to generate exam hall QR.', 'error');
+      setExamQR('');
+      setExamQRInfo(null);
+    } finally {
+      setBulkGenerating(false);
     }
-
-    const generated = eligibleStudents.map(student => {
-      const payload = {
-        studentId: student.id,
-        matricNumber: student.matricNumber,
-        examId: exam.id,
-        institutionId: user.id,
-        timestamp: new Date().toISOString()
-      };
-      return {
-        student,
-        token: encodeQR(payload)
-      };
-    });
-
-    setBulkList(generated);
-    showToast(`Bulk QR codes generated for ${eligibleStudents.length} enrolled students.`, 'success');
   };
 
   // Download QR Code as PNG SVG canvas drawer
@@ -175,9 +166,9 @@ export const QRManagement = () => {
             <div class="qr">${document.getElementById('qr-wrapper').innerHTML}</div>
             <p>NAME: ${qrPayload?.student.lastName}, ${qrPayload?.student.firstName}</p>
             <p>MATRIC: ${qrPayload?.student.matricNumber}</p>
-            <p>COURSE: ${qrPayload?.exam.courseCode} - ${qrPayload?.exam.courseTitle}</p>
+            <p>COURSE: ${qrPayload?.exam.courseCode} - ${qrPayload?.exam.title}</p>
             <p>VENUE: ${qrPayload?.exam.venue}</p>
-            <p>DATE: ${qrPayload?.exam.examDate} @ ${qrPayload?.exam.examTime}</p>
+            <p>DATE: ${qrPayload?.exam.examDate ? new Date(qrPayload.exam.examDate).toLocaleDateString() : ''} @ ${qrPayload?.exam.startTime || ''}</p>
           </div>
         </body>
       </html>
@@ -185,38 +176,33 @@ export const QRManagement = () => {
     printWindow.document.close();
   };
 
-  // Print bulk QR Passes
-  const printBulk = () => {
+  // Print the single shared exam hall QR poster
+  const printExamQR = () => {
+    if (!examQRInfo?.qrBase64) return;
+    const exam = examQRInfo.exam;
     const printWindow = window.open('', '_blank');
-    let passesHTML = '';
-    const exam = exams.find(e => e.id === bulkExamId);
-
-    bulkList.forEach(item => {
-      passesHTML += `
-        <div class="pass-container" style="page-break-after: always; border: 4px solid #000; padding: 30px; max-width: 400px; margin: 40px auto; text-align: center;">
-          <h2 style="margin: 0 0 10px 0; font-family: monospace; font-weight: 900;">EXAM HALL ENTRY PASS</h2>
-          <div style="margin: 20px auto; display: inline-block;">
-            <svg width="200" height="200" viewBox="0 0 29 29" style="shape-rendering: crispEdges;">
-              <!-- Simple placeholder printable mock svg for print speed -->
-              <rect width="200" height="200" fill="#fff" />
-              <rect x="20" y="20" width="160" height="160" fill="#000" />
-              <rect x="40" y="40" width="120" height="120" fill="#fff" />
-              <rect x="60" y="60" width="80" height="80" fill="#000" />
-            </svg>
-          </div>
-          <h3 style="margin: 5px 0; font-family: sans-serif;">${item.student.lastName}, ${item.student.firstName}</h3>
-          <p style="font-weight: bold; font-family: sans-serif; font-size: 14px; margin: 4px 0;">MATRIC: ${item.student.matricNumber}</p>
-          <p style="font-weight: bold; font-family: sans-serif; font-size: 14px; margin: 4px 0;">COURSE: ${exam?.courseCode}</p>
-          <p style="font-weight: bold; font-family: sans-serif; font-size: 12px; margin: 4px 0; color: #555;">VENUE: ${exam?.venue}</p>
-        </div>
-      `;
-    });
-
     printWindow.document.write(`
       <html>
-        <head><title>Print Bulk Exam Entry Passes</title></head>
+        <head>
+          <title>Exam Hall Entry QR</title>
+          <style>
+            body { font-family: 'Arial', sans-serif; text-align: center; padding: 40px; }
+            .poster { border: 4px solid #000; padding: 40px; max-width: 520px; margin: 0 auto; }
+            h1 { margin: 0 0 8px 0; font-weight: 900; text-transform: uppercase; }
+            h2 { margin: 4px 0; }
+            p { font-weight: bold; margin: 6px 0; }
+            .qr { margin: 30px auto; }
+          </style>
+        </head>
         <body onload="window.print(); window.close();">
-          ${passesHTML}
+          <div class="poster">
+            <h1>Exam Hall Entry</h1>
+            <h2>${exam?.courseCode} - ${exam?.title || ''}</h2>
+            <div class="qr"><img src="${examQRInfo.qrBase64}" alt="Exam QR" width="320" height="320" /></div>
+            <p>VENUE: ${exam?.venue || ''}</p>
+            <p>ELIGIBLE: ${exam?.department || ''} — ${exam?.level || ''}</p>
+            <p style="font-size:12px;color:#555;">Scan with the student app to verify your identity and record attendance.</p>
+          </div>
         </body>
       </html>
     `);
@@ -229,7 +215,7 @@ export const QRManagement = () => {
       <div className="flex items-center justify-between gap-4 border-b-4 border-black pb-4">
         <div>
           <h1 className="text-3xl font-black uppercase text-black m-0 tracking-wide">QR Engine</h1>
-          <p className="text-sm font-bold text-gray-500 uppercase mt-1">Generate, audit, and distribute cryptographically secure attendance QR Passes.</p>
+          <p className="text-sm font-bold text-gray-500 uppercase mt-1">Generate and distribute secure QR Passes to display at exam hall entrances for student scanning.</p>
         </div>
       </div>
 
@@ -274,17 +260,18 @@ export const QRManagement = () => {
                 >
                   <option value="">-- Select Scheduled Exam --</option>
                   {exams.map(e => (
-                    <option key={e.id} value={e.id}>{e.courseCode} - {e.courseTitle}</option>
+                    <option key={e.id} value={e.id}>{e.courseCode} - {e.title}</option>
                   ))}
                 </select>
               </div>
 
               <button
                 onClick={handleGenerateQR}
-                className="w-full flat-btn-blue justify-center py-3 text-sm font-black"
+                disabled={generating}
+                className="w-full flat-btn-blue justify-center py-3 text-sm font-black disabled:opacity-60"
               >
                 <QrCode className="w-4 h-4 stroke-[3]" />
-                Generate Entry Pass
+                {generating ? 'Generating…' : 'Generate Entry Pass'}
               </button>
             </div>
 
@@ -295,7 +282,7 @@ export const QRManagement = () => {
                   <QRCode 
                     id="qr-svg"
                     value={generatedQR} 
-                    size={160} 
+                    size={260} 
                     level="H"
                     style={{ height: "auto", maxWidth: "100%", width: "100%" }}
                   />
@@ -334,7 +321,7 @@ export const QRManagement = () => {
             <div className="space-y-6">
               <h3 className="font-black text-lg uppercase border-b-4 border-black pb-3 text-black flex items-center gap-2">
                 <Layers className="w-5 h-5 text-flatAmber" />
-                Bulk Pass Generator
+                Exam Hall QR
               </h3>
 
               <div className="space-y-4">
@@ -347,45 +334,60 @@ export const QRManagement = () => {
                   >
                     <option value="">-- Choose Course to Bulk Generate --</option>
                     {exams.map(e => (
-                      <option key={e.id} value={e.id}>{e.courseCode} - {e.courseTitle} ({e.department} - {e.level})</option>
+                      <option key={e.id} value={e.id}>{e.courseCode} - {e.title} ({e.department} - {e.level})</option>
                     ))}
                   </select>
                 </div>
 
                 <button
                   onClick={handleBulkGenerate}
-                  className="w-full flat-btn-amber justify-center py-3 text-sm font-black"
+                  disabled={bulkGenerating}
+                  className="w-full flat-btn-amber justify-center py-3 text-sm font-black disabled:opacity-60"
                 >
                   <Layers className="w-4 h-4" />
-                  Generate Enrolled Students
+                  {bulkGenerating ? 'Generating…' : 'Generate Exam Hall QR'}
                 </button>
               </div>
 
-              {/* Bulk Generation Results */}
-              {bulkList.length > 0 && (
-                <div className="space-y-4 border-t-2 border-black pt-4">
-                  <div className="flex justify-between items-center bg-gray-50 border-2 border-black p-3 text-xs font-black">
-                    <span>GENERATED PASSES:</span>
-                    <span className="flat-badge bg-flatEmerald text-white px-2 py-0.5 border-none">{bulkList.length} PASSES</span>
+              {/* Generated Exam Hall QR */}
+              {examQR && examQRInfo && (
+                <div className="flat-border border-black p-6 bg-gray-50 flex flex-col items-center text-center space-y-4">
+                  <div id="exam-qr-wrapper" className="p-4 bg-white flat-border border-black">
+                    <QRCode
+                      value={examQR}
+                      size={280}
+                      level="H"
+                      style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                    />
                   </div>
 
-                  {/* Scrollable list preview */}
-                  <div className="flat-border border-black max-h-48 overflow-y-auto divide-y border-t-4 border-b-4">
-                    {bulkList.map((item, idx) => (
-                      <div key={idx} className="p-3 flex justify-between items-center text-xs font-bold bg-white">
-                        <span>{item.student.lastName}, {item.student.firstName}</span>
-                        <span className="font-mono text-gray-500">{item.student.matricNumber}</span>
-                      </div>
-                    ))}
+                  <div className="w-full text-left space-y-2 border-t-2 border-black pt-4 font-semibold text-xs text-gray-600">
+                    <div className="flex justify-between"><span className="uppercase font-black text-black">COURSE</span><span>{examQRInfo.exam?.courseCode} - {examQRInfo.exam?.title}</span></div>
+                    <div className="flex justify-between"><span className="uppercase font-black text-black">VENUE</span><span>{examQRInfo.exam?.venue}</span></div>
+                    <div className="flex justify-between"><span className="uppercase font-black text-black">ELIGIBLE</span><span>{examQRInfo.exam?.department} — {examQRInfo.exam?.level}</span></div>
                   </div>
 
-                  <button
-                    onClick={printBulk}
-                    className="w-full flat-btn bg-black text-white hover:scale-102 py-3 text-xs font-black uppercase flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Printer className="w-4 h-4" />
-                    Print All passes (${bulkList.length} pages)
-                  </button>
+                  <p className="text-[10px] font-bold text-gray-500 uppercase leading-snug">
+                    One shared code for the whole hall — every registered student scans this same QR to verify.
+                  </p>
+
+                  <div className="w-full flex gap-2 border-t-2 border-black pt-4">
+                    <a
+                      href={examQRInfo.qrBase64}
+                      download={`ExamQR_${examQRInfo.exam?.courseCode || 'exam'}.png`}
+                      className="flex-1 flat-btn bg-white hover:scale-102 py-2 px-3 text-[10px] font-black uppercase flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Download PNG
+                    </a>
+                    <button
+                      onClick={printExamQR}
+                      className="flex-1 flat-btn bg-black text-white hover:scale-102 py-2 px-3 text-[10px] font-black uppercase flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      Print QR
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -396,7 +398,7 @@ export const QRManagement = () => {
                 Security Note
               </h4>
               <p className="text-[10px] font-bold text-gray-500 leading-snug">
-                Each QR pass contains a cryptographically obfuscated JSON block containing: Student ID, Matric, Exam ID, and Institution details. Scanner cameras will validate timestamps and prevent double scans.
+                The exam hall QR encodes an AES-encrypted Exam ID + Institution payload. Display this single code at the entrance — each registered student scans it with the student app, and the system identifies them from their login session to record attendance.
               </p>
             </div>
           </div>

@@ -213,6 +213,14 @@ export const api = {
       const res = await apiClient.post('/qrcodes/bulk-generate', data);
       return unwrap(res);
     },
+    listByExam: async (examId) => {
+      const res = await apiClient.get(`/qrcodes/exam/${examId}`);
+      return unwrap(res);
+    },
+    generateExamQR: async (examId) => {
+      const res = await apiClient.post('/qrcodes/exam-qr', { examId });
+      return unwrap(res);
+    },
     verify: async (encryptedPayload) => {
       const res = await apiClient.post('/qrcodes/verify', { encryptedPayload });
       return unwrap(res);

@@ -158,8 +158,8 @@ export const Scanner = () => {
       {/* Title */}
       <div className="flex items-center justify-between gap-4 border-b-4 border-black pb-4">
         <div>
-          <h1 className="text-3xl font-black uppercase text-black m-0 tracking-wide">QR Scanner</h1>
-          <p className="text-sm font-bold text-gray-500 uppercase mt-1">Live camera scan & validation verification for exam hall entries.</p>
+          <h1 className="text-3xl font-black uppercase text-black m-0 tracking-wide">Staff Scanner</h1>
+          <p className="text-sm font-bold text-gray-500 uppercase mt-1">Manual override — Staff can verify student QR passes directly as a backup verification method.</p>
         </div>
       </div>
 
@@ -284,9 +284,9 @@ export const Scanner = () => {
                         <div className="w-20 h-20 bg-gray-100 border-4 border-dashed border-black flex items-center justify-center">
                           <Camera className="w-10 h-10 text-gray-600" />
                         </div>
-                        <h3 className="text-lg font-black uppercase text-black">Ready to scan student pass</h3>
+                        <h3 className="text-lg font-black uppercase text-black">Ready to manually verify student</h3>
                         <p className="text-xs font-bold text-gray-500 max-w-xs uppercase leading-snug">
-                          Activate the device camera to scan student entry QR code passes at the entrance hall.
+                          Use this as a backup — scan a student's QR pass to manually verify their identity at the exam hall entrance.
                         </p>
                         <button
                           onClick={() => setScanning(true)}
