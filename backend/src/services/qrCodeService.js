@@ -37,14 +37,14 @@ class QRCodeService {
     // Revoke any old active QRs
     await qrCodeRepository.revokeByStudentAndExam(studentId, examId);
 
-    // Create encrypted payload
+    // Encrypted payload is intentionally minimal — it's just an
+    // unforgeable fingerprint. All context (student, exam, institution)
+    // comes from the QRCode DB record we look up by encryptedPayload.
+    // Keeping the payload small also keeps the rendered QR image dense
+    // enough for phone cameras to scan reliably.
     const payload = {
-      studentId: studentId.toString(),
-      examId: examId.toString(),
-      institutionId: institutionId.toString(),
-      matricNumber: student.matricNumber,
-      timestamp: Date.now(),
-      nonce: crypto.randomBytes(8).toString('hex'),
+      t: Date.now(),
+      n: crypto.randomBytes(8).toString('hex'),
     };
 
     const encryptedPayload = encrypt(payload);
@@ -196,12 +196,10 @@ class QRCodeService {
     // Revoke any older exam QRs so only one shared code is active per exam.
     await qrCodeRepository.revokeExamQRs(examId);
 
+    // Minimal payload — DB record carries the type/exam/institution.
     const payload = {
-      examId: examId.toString(),
-      institutionId: institutionId.toString(),
-      type: 'exam',
-      timestamp: Date.now(),
-      nonce: crypto.randomBytes(8).toString('hex'),
+      t: Date.now(),
+      n: crypto.randomBytes(8).toString('hex'),
     };
 
     const encryptedPayload = encrypt(payload);
@@ -239,13 +237,22 @@ class QRCodeService {
    * Verify a scanned QR code payload
    */
   async verifyQR(encryptedPayload, verifiedBy, institutionId) {
-    let payload;
+    // Some QR scanners append whitespace/newlines — be defensive.
+    encryptedPayload = (encryptedPayload || '').toString().trim();
+    if (!encryptedPayload) {
+      return {
+        verified: false,
+        reason: 'Empty QR payload received.',
+        status: 'INVALID',
+      };
+    }
 
-    // Step 1: Decrypt
+    // Step 1: Decrypt (payload contents aren't trusted — we only care that
+    // decryption succeeds, which proves the QR came from us).
     try {
-      payload = decrypt(encryptedPayload);
+      decrypt(encryptedPayload);
     } catch (error) {
-      logger.warn(`QR verification failed: decryption error`);
+      logger.warn(`QR verification failed: decryption error — ${error.message}`);
       return {
         verified: false,
         reason: 'Invalid QR code. Could not decrypt payload.',
@@ -253,9 +260,10 @@ class QRCodeService {
       };
     }
 
-    // Step 2: Find QR code record
+    // Step 2: Find QR code record (DB is the source of truth for identity).
     const qrCode = await qrCodeRepository.findOne({ encryptedPayload });
     if (!qrCode) {
+      logger.warn('QR verification failed: no matching record in database.');
       return {
         verified: false,
         reason: 'QR code not found in system.',
@@ -300,8 +308,16 @@ class QRCodeService {
       };
     }
 
-    // Step 7: Check student status
-    const student = await studentRepository.findById(payload.studentId);
+    // Step 7: Check student status (identity comes from the QR record).
+    const qrStudentId = qrCode.studentId?._id || qrCode.studentId;
+    if (!qrStudentId) {
+      return {
+        verified: false,
+        reason: 'This QR is not tied to a specific student. Use the student self-scan flow instead.',
+        status: 'NOT_A_STUDENT_QR',
+      };
+    }
+    const student = await studentRepository.findById(qrStudentId);
     if (!student) {
       return {
         verified: false,
@@ -319,7 +335,8 @@ class QRCodeService {
     }
 
     // Step 8: Check exam status
-    const exam = await examRepository.findById(payload.examId);
+    const qrExamId = qrCode.examId?._id || qrCode.examId;
+    const exam = await examRepository.findById(qrExamId);
     if (!exam) {
       return {
         verified: false,
@@ -330,8 +347,8 @@ class QRCodeService {
 
     // Step 9: Check for duplicate attendance
     const existingAttendance = await attendanceRepository.findByStudentAndExam(
-      payload.studentId,
-      payload.examId
+      qrStudentId,
+      qrExamId
     );
     if (existingAttendance) {
       return {
@@ -401,13 +418,21 @@ class QRCodeService {
    * Student-initiated QR verification (student scans institution QR at exam hall)
    */
   async studentVerifyQR(encryptedPayload, studentId) {
-    let payload;
+    encryptedPayload = (encryptedPayload || '').toString().trim();
+    if (!encryptedPayload) {
+      return {
+        verified: false,
+        reason: 'Empty QR payload received.',
+        status: 'INVALID',
+      };
+    }
 
-    // Step 1: Decrypt
+    // Step 1: Decrypt (we don't trust payload contents — identity comes
+    // from the DB record we look up by encryptedPayload).
     try {
-      payload = decrypt(encryptedPayload);
+      decrypt(encryptedPayload);
     } catch (error) {
-      logger.warn(`Student QR verification failed: decryption error`);
+      logger.warn(`Student QR verification failed: decryption error — ${error.message}`);
       return {
         verified: false,
         reason: 'Invalid QR code. Could not decrypt payload.',
@@ -418,6 +443,7 @@ class QRCodeService {
     // Step 2: Find QR code record
     const qrCode = await qrCodeRepository.findOne({ encryptedPayload });
     if (!qrCode) {
+      logger.warn('Student QR verification failed: no matching record in database.');
       return {
         verified: false,
         reason: 'QR code not found in system.',
@@ -485,8 +511,9 @@ class QRCodeService {
       };
     }
 
-    // Step 8: Check exam
-    const exam = await examRepository.findById(payload.examId);
+    // Step 8: Check exam (identity comes from the QR record).
+    const qrExamId = qrCode.examId?._id || qrCode.examId;
+    const exam = await examRepository.findById(qrExamId);
     if (!exam) {
       return {
         verified: false,
@@ -517,7 +544,7 @@ class QRCodeService {
     // Step 9: Check for duplicate attendance
     const existingAttendance = await attendanceRepository.findByStudentAndExam(
       studentId,
-      payload.examId
+      qrExamId
     );
     if (existingAttendance) {
       return {
