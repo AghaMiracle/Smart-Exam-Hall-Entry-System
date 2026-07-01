@@ -106,7 +106,9 @@ export const MyQRCode = () => {
   const handleScanResult = async (qrString) => {
     setProcessing(true);
     try {
-      const result = await api.qrCodes.verify(qrString);
+      // Some scanners append a trailing newline/whitespace.
+      const cleaned = (qrString || '').toString().trim();
+      const result = await api.qrCodes.verify(cleaned);
       setScanResult(result);
       if (result.verified) {
         showToast('Student Verified — Entry Approved!', 'success');
